@@ -8,6 +8,7 @@
 #include "test/test_meowcoin.h"
 #include "random.h"
 #include <thread>
+#include <deque>
 
 /** Test Suite for CuckooCache
  *
