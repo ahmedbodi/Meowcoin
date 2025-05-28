@@ -24,3 +24,16 @@ uint256 CBitcoinBlockHeader::GetHash() const
     scrypt_1024_1_1_256(BEGIN(nVersion), BEGIN(thash));
     return thash;
 }
+
+void CBitcoinBlockHeader::SetAuxpow(CAuxPow* apow)
+{
+    if (apow)
+    {
+        auxpow.reset(apow);
+        SetAuxpowVersion(true);
+    } else
+    {
+        auxpow.reset();
+        SetAuxpowVersion(false);
+    }
+}

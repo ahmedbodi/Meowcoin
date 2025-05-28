@@ -6,10 +6,13 @@
 #ifndef BITCOIN_PRIMITIVES_BITCOINBLOCKHEADER_H
 #define BITCOIN_PRIMITIVES_BITCOINBLOCKHEADER_H
 
+#include "auxpow.h"
 #include "primitives/partialheader.h"
 #include "serialize.h"
 #include "uint256.h"
 
+#include <memory>
+#include <boost/shared_ptr.hpp>
 
 /**
  * A block header without auxpow information.  This "intermediate step"
@@ -30,6 +33,9 @@ private:
 
 public:
     uint32_t nNonce;
+    
+    // auxpow (if this is a merge-minded block)
+    boost::shared_ptr<CAuxPow> auxpow;
 
     CBitcoinBlockHeader()
     {
@@ -42,12 +48,22 @@ public:
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(*(CPartialBlockHeader*)this);
         READWRITE(nNonce);
+
+        if (this->IsAuxpow())
+        {
+            if (ser_action.ForRead())
+                auxpow.reset (new CAuxPow());
+            assert(auxpow);
+            READWRITE(*auxpow);
+        } else if (ser_action.ForRead())
+            auxpow.reset();
     }
 
     void SetNull()
     {
         CPartialBlockHeader::SetNull();
         nNonce = 0;
+        auxpow.reset();
     }
 
     bool IsNull() const
@@ -109,6 +125,13 @@ public:
         nVersion %= VERSION_CHAIN_START;
         nVersion |= chainId * VERSION_CHAIN_START;
     }
+
+    /**
+     * Set the block's auxpow (or unset it).  This takes care of updating
+     * the version accordingly.
+     * @param apow Pointer to the auxpow to use or NULL.
+     */
+    void SetAuxpow (CAuxPow* apow);
 
     /**
      * Check if the auxpow flag is set in the version.
