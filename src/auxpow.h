@@ -8,7 +8,7 @@
 #define BITCOIN_AUXPOW_H
 
 #include "consensus/params.h"
-#include "primitives/pureheader.h"
+#include "primitives/bitcoinblockheader.h"
 #include "primitives/transaction.h"
 #include "serialize.h"
 #include "uint256.h"
@@ -16,7 +16,7 @@
 #include <vector>
 
 class CBlock;
-class CBlockHeader;
+class CBitcoinBlockHeader;
 class CBlockIndex;
 class CValidationState;
 
@@ -131,7 +131,7 @@ public:
   int nChainIndex;
 
   /** Parent block header (on which the real PoW is done).  */
-  CPureBlockHeader parentBlock;
+  CBitcoinBlockHeader parentBlock;
 
 public:
 
@@ -204,7 +204,7 @@ public:
    * can be "mined" to make it valid.
    * @param header The header to set the auxpow on.
    */
-  static void initAuxPow (CBlockHeader& header);
+  static void initAuxPow (CBitcoinBlockHeader& header);
 
 };
 

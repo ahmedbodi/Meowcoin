@@ -199,7 +199,7 @@ CAuxPow::CheckMerkleBranch (uint256 hash,
 }
 
 void
-CAuxPow::initAuxPow (CBlockHeader& header)
+CAuxPow::initAuxPow (CBitcoinBlockHeader& header)
 {
   /* Set auxpow flag right now, since we take the block hash below.  */
   header.SetAuxpowVersion(true);

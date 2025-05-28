@@ -3,26 +3,13 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_PRIMITIVES_PUREHEADER_H
-#define BITCOIN_PRIMITIVES_PUREHEADER_H
+#ifndef BITCOIN_PRIMITIVES_BITCOINBLOCKHEADER_H
+#define BITCOIN_PRIMITIVES_BITCOINBLOCKHEADER_H
 
 #include "primitives/partialheader.h"
 #include "serialize.h"
 #include "uint256.h"
 
-extern uint32_t nKAWPOWActivationTime;
-extern uint32_t nMEOWPOWActivationTime;
-
-class BlockNetwork
-{
-public:
-    BlockNetwork();
-    bool fOnRegtest;
-    bool fOnTestnet;
-    void SetNetwork(const std::string& network);
-};
-
-extern BlockNetwork bNetwork;
 
 /**
  * A block header without auxpow information.  This "intermediate step"
@@ -31,7 +18,7 @@ extern BlockNetwork bNetwork;
  * the block header (referencing an auxpow).  The parent block header
  * does not have auxpow itself, so it is a pure header.
  */
-class CPureBlockHeader : public CPartialBlockHeader
+class CBitcoinBlockHeader : public CPartialBlockHeader
 {
 private:
 
@@ -44,12 +31,7 @@ private:
 public:
     uint32_t nNonce;
 
-    //KAAAWWWPOW+Meowpow data
-    uint32_t nHeight;
-    uint64_t nNonce64;
-    uint256 mix_hash;
-
-    CPureBlockHeader()
+    CBitcoinBlockHeader()
     {
         SetNull();
     }
@@ -59,23 +41,13 @@ public:
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(*(CPartialBlockHeader*)this);
-        if (nTime < nKAWPOWActivationTime || IsAuxpow()) {
-            READWRITE(nNonce);
-        } else { //This should be more than adequte for Meowpow
-            READWRITE(nHeight);
-            READWRITE(nNonce64);
-            READWRITE(mix_hash);
-        }
+        READWRITE(nNonce);
     }
 
     void SetNull()
     {
         CPartialBlockHeader::SetNull();
         nNonce = 0;
-
-        nNonce64 = 0;
-        nHeight = 0;
-        mix_hash.SetNull();
     }
 
     bool IsNull() const
@@ -84,13 +56,6 @@ public:
     }
 
     uint256 GetHash() const;
-    uint256 GetX16RHash() const;
-    uint256 GetX16RV2Hash() const;
-
-    uint256 GetHashFull(uint256& mix_hash) const;
-    uint256 GetKAWPOWHeaderHash() const;
-    uint256 GetMEOWPOWHeaderHash() const;
-    uint256 GetAuxPowHash() const;
 
     int64_t GetBlockTime() const
     {
@@ -176,53 +141,4 @@ public:
     }
 };
 
-/**
- * Custom serializer for CBlockHeader that omits the nNonce and mixHash, for use
- * as input to ProgPow.
- */
-class CKAWPOWInput : private CPureBlockHeader
-{
-public:
-    CKAWPOWInput(const CPureBlockHeader &header)
-    {
-        CPureBlockHeader::SetNull();
-        *((CPureBlockHeader*)this) = header;
-    }
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(this->nVersion);
-        READWRITE(hashPrevBlock);
-        READWRITE(hashMerkleRoot);
-        READWRITE(nTime);
-        READWRITE(nBits);
-        READWRITE(nHeight);
-    }
-};
-
-//MEOWPOW
-class CMEOWPOWInput : private CPureBlockHeader
-{
-public:
-    CMEOWPOWInput(const CPureBlockHeader &header)
-    {
-        CPureBlockHeader::SetNull();
-        *((CPureBlockHeader*)this) = header;
-    }
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(this->nVersion);
-        READWRITE(hashPrevBlock);
-        READWRITE(hashMerkleRoot);
-        READWRITE(nTime);
-        READWRITE(nBits);
-        READWRITE(nHeight);
-    }
-};
-
-#endif // BITCOIN_PRIMITIVES_PUREHEADER_H
+#endif // BITCOIN_PRIMITIVES_BITCOINBLOCHEADER_H

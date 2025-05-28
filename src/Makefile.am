@@ -398,6 +398,9 @@ libmeowcoin_consensus_a_SOURCES = \
   prevector.h \
   primitives/block.cpp \
   primitives/block.h \
+  primitives/bitcoinblockheader.cpp \
+  primitives/bitcoinblockheader.h \
+  primitives/partialheader.h \
   primitives/pureheader.cpp \
   primitives/pureheader.h \
   primitives/transaction.cpp \
