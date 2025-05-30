@@ -92,6 +92,19 @@ uint256 CBlockHeader::GetX16RV2Hash() const
     return HashX16RV2(BEGIN(nVersion), END(nNonce), hashPrevBlock);
 }
 
+void CBlockHeader::SetAuxpow(CAuxPow* apow)
+{
+    if (apow)
+    {
+        auxpow.reset(apow);
+        SetAuxpowVersion(true);
+    } else
+    {
+        auxpow.reset();
+        SetAuxpowVersion(false);
+    }
+}
+
 /**
  * @brief This takes a block header, removes the nNonce64 and the mixHash. Then performs a serialized hash of it SHA256D.
  * This will be used as the input to the KAAAWWWPOW hashing function
