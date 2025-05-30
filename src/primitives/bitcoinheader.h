@@ -19,6 +19,12 @@
 class CBitcoinBlockHeader
 {
 public:
+    /* Modifiers to the version.  */
+    static const int32_t VERSION_AUXPOW = (1 << 8);
+
+    /** Bits above are reserved for the auxpow chain ID.  */
+    static const int32_t VERSION_CHAIN_START = (1 << 16);
+
     // header
     int32_t nVersion;
     uint256 hashPrevBlock;

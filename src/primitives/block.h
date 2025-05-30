@@ -8,6 +8,7 @@
 #define MEOWCOIN_PRIMITIVES_BLOCK_H
 
 #include "auxpow.h"
+#include "primitives/bitcoinheader.h"
 #include "primitives/transaction.h"
 #include "serialize.h"
 #include "uint256.h"
@@ -40,12 +41,6 @@ extern BlockNetwork bNetwork;
 
 class CBlockHeader
 {
-private:
-    /* Modifiers to the version.  */
-    static const int32_t VERSION_AUXPOW = (1 << 8);
-
-    /** Bits above are reserved for the auxpow chain ID.  */
-    static const int32_t VERSION_CHAIN_START = (1 << 16);
 public:
 
     // header
@@ -144,7 +139,7 @@ public:
     }
     static inline int32_t GetBaseVersion(int32_t ver)
     {
-        return ver % VERSION_AUXPOW;
+        return ver % CBitcoinBlockHeader::VERSION_AUXPOW;
     }
 
     /**
@@ -162,7 +157,7 @@ public:
      */
     inline int32_t GetChainId() const
     {
-        return nVersion / VERSION_CHAIN_START;
+        return nVersion / CBitcoinBlockHeader::VERSION_CHAIN_START;
     }
 
     /**
@@ -171,8 +166,8 @@ public:
      */
     inline void SetChainId(int32_t chainId)
     {
-        nVersion %= VERSION_CHAIN_START;
-        nVersion |= chainId * VERSION_CHAIN_START;
+        nVersion %= CBitcoinBlockHeader::VERSION_CHAIN_START;
+        nVersion |= chainId * CBitcoinBlockHeader::VERSION_CHAIN_START;
     }
 
     /**
@@ -181,7 +176,7 @@ public:
      */
     inline bool IsAuxpow() const
     {
-        return nVersion & VERSION_AUXPOW;
+        return nVersion & CBitcoinBlockHeader::VERSION_AUXPOW;
     }
 
     /**
@@ -191,9 +186,9 @@ public:
     inline void SetAuxpowVersion (bool auxpow)
     {
         if (auxpow)
-            nVersion |= VERSION_AUXPOW;
+            nVersion |= CBitcoinBlockHeader::VERSION_AUXPOW;
         else
-            nVersion &= ~VERSION_AUXPOW;
+            nVersion &= ~CBitcoinBlockHeader::VERSION_AUXPOW;
     }
 
     /**
