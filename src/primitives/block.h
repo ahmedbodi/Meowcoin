@@ -199,6 +199,13 @@ public:
     {
         return nVersion == 1;
     }
+
+    /**
+     * Set the block's auxpow (or unset it).  This takes care of updating
+     * the version accordingly.
+     * @param apow Pointer to the auxpow to use or NULL.
+     */
+    void SetAuxpow (CAuxPow* apow);
 };
 
 
@@ -259,13 +266,6 @@ public:
     // {
     //     block.hashPrevBlock = prevHash;
     // }
-
-    /**
-     * Set the block's auxpow (or unset it).  This takes care of updating
-     * the version accordingly.
-     * @param apow Pointer to the auxpow to use or NULL.
-     */
-    void SetAuxpow (CAuxPow* apow);
 
     std::string ToString() const;
 };

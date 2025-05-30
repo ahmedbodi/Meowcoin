@@ -71,6 +71,16 @@ public:
     {
         return (int64_t)nTime;
     }
+
+    /**
+     * Extract the chain ID.
+     * @return The chain ID encoded in the version.
+     */
+    inline int32_t GetChainId() const
+    {
+        return nVersion / CBitcoinBlockHeader::VERSION_CHAIN_START;
+    }
+
 };
 
 #endif // BITCOIN_PRIMITIVES_PUREHEADER_H
