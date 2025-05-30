@@ -6,7 +6,6 @@
 #ifndef MEOWCOIN_BLOCK_ENCODINGS_H
 #define MEOWCOIN_BLOCK_ENCODINGS_H
 
-#include "primitives/pureheader.h"
 #include "primitives/block.h"
 
 #include <memory>

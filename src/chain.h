@@ -9,6 +9,7 @@
 
 #include "arith_uint256.h"
 #include "consensus/params.h"
+#include "primitives/bitcoinheader.h"
 #include "primitives/block.h"
 #include "pow.h"
 #include "tinyformat.h"
@@ -367,7 +368,7 @@ public:
     /* Analyse the block version.  */
     inline int GetBaseVersion() const
     {
-        return CPureBlockHeader::GetBaseVersion(nVersion);
+        return CBlockHeader::GetBaseVersion(nVersion);
     }
 };
 

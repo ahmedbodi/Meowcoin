@@ -8,7 +8,7 @@
 #define BITCOIN_AUXPOW_H
 
 #include "consensus/params.h"
-#include "primitives/pureheader.h"
+#include "primitives/bitcoinheader.h"
 #include "primitives/transaction.h"
 #include "serialize.h"
 #include "uint256.h"
@@ -131,7 +131,7 @@ public:
   int nChainIndex;
 
   /** Parent block header (on which the real PoW is done).  */
-  CPureBlockHeader parentBlock;
+  CBitcoinBlockHeader parentBlock;
 
 public:
 

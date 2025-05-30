@@ -142,7 +142,7 @@ UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGen
         }
         uint256 mix_hash;
         CAuxPow::initAuxPow(*pblock);
-        CPureBlockHeader& miningHeader = pblock->auxpow->parentBlock;
+        CBitcoinBlockHeader& miningHeader = pblock->auxpow->parentBlock;
         while (nMaxTries > 0 && miningHeader.nNonce < nInnerLoopCount && !CheckProofOfWork(miningHeader.GetHashFull(mix_hash), pblock->nBits,
                                                                                                   GetParams().GetConsensus())) {
             if (pblock->nTime < nKAWPOWActivationTime) {
