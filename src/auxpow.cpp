@@ -242,9 +242,15 @@ CAuxPow::initAuxPow (CBlockHeader& header)
   uint32_t nSize = 1;  // Tree size of 1 (encoded as little-endian)
   uint32_t nNonce = 0; // Nonce of 0 (encoded as little-endian)
   
-  // Add the size and nonce in little-endian format
-  scriptSig << nSize;
-  scriptSig << nNonce;
+  // Add the size and nonce as raw 4-byte little-endian values
+  // directly to the script without using << operator
+  scriptSig.insert(scriptSig.end(), 
+                  (unsigned char*)&nSize, 
+                  (unsigned char*)&nSize + sizeof(nSize));
+  
+  scriptSig.insert(scriptSig.end(), 
+                  (unsigned char*)&nNonce, 
+                  (unsigned char*)&nNonce + sizeof(nNonce));
   
   /* Fake a parent-block coinbase with just the required input
      script and no outputs.  */
