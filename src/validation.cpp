@@ -1300,18 +1300,19 @@ bool CheckProofOfWork(const CBlockHeader& block, const Consensus::Params& params
         return true;
     }
 
-    /* We have auxpow.  Check it.  */
+    /* We have auxpow. Use our helper function to validate it properly. */
     if (!block.nVersion.IsAuxpow())
         return error("%s : auxpow on block with non-auxpow version", __func__);
 
     LogPrintf("%s : Checking AuxPow Block: %s", __func__, block.ToString().c_str());
+    LogPrint(BCLog::AUXPOW, "AuxPow Block height: %d\n", block.nHeight);
 
-    if (!block.auxpow->check(block.GetHash(), block.nVersion.GetChainId(), params))
-        return error("%s : AUX POW is not valid", __func__);
-    if (!CheckProofOfWork(block.auxpow->getParentBlockHash(), block.nBits, params))
-        return error("%s : AUX proof of work failed", __func__);
+    // Make sure auxpow is properly initialized
+    if (!block.auxpow)
+        return error("%s : auxpow is null", __func__);
 
-    return true;
+    // Use the helper function to validate the auxpow completely
+    return block.auxpow->checkBlockHeader(block, params);
 }
 
 static bool WriteBlockToDisk(const CBlock& block, CDiskBlockPos& pos, const CMessageHeader::MessageStartChars& messageStart)
@@ -1335,9 +1336,6 @@ static bool WriteBlockToDisk(const CBlock& block, CDiskBlockPos& pos, const CMes
     return true;
 }
 
-/* Generic implementation of block reading that can handle
-   both a block and its header.  */
-
 template<typename T>
 static bool ReadBlockOrHeader(T& block, const CDiskBlockPos& pos, const Consensus::Params& consensusParams)
 {
@@ -1356,6 +1354,20 @@ static bool ReadBlockOrHeader(T& block, const CDiskBlockPos& pos, const Consensu
         return error("%s: Deserialize or I/O error - %s at %s", __func__, e.what(), pos.ToString());
     }
 
+    // Try to look up the block height from the index BEFORE checking the proof of work
+    // This is needed for auxpow validation which depends on height
+    const uint256 hash = block.GetHash();
+    BlockMap::iterator mi = mapBlockIndex.find(hash);
+    if (mi != mapBlockIndex.end() && mi->second) {
+        block.nHeight = mi->second->nHeight;
+        LogPrint(BCLog::AUXPOW, "Setting block height to %d for block %s read from disk\n", 
+                 block.nHeight, hash.ToString());
+    } else {
+        LogPrint(BCLog::AUXPOW, "Block %s not found in mapBlockIndex, using height=0\n", 
+                 hash.ToString());
+        block.nHeight = 0;
+    }
+
     // Check the header
     if (!CheckProofOfWork(block, consensusParams))
         return error("ReadBlockFromDisk: Errors in block header at %s", pos.ToString());
@@ -1371,6 +1383,11 @@ static bool ReadBlockOrHeader(T& block, const CBlockIndex* pindex, const Consens
     if (block.GetHash() != pindex->GetBlockHash())
         return error("ReadBlockFromDisk(CBlock&, CBlockIndex*): GetHash() doesn't match index for %s at %s",
                 pindex->ToString(), pindex->GetBlockPos().ToString());
+
+    // Set the block height from the block index
+    // This is critical for auxpow validation which relies on height
+    block.nHeight = pindex->nHeight;
+
     return true;
 }
 
@@ -2489,6 +2506,8 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
         // We've been configured with the hash of a block which has been externally verified to have a valid history.
         // A suitable default value is included with the software and updated from time to time.  Because validity
         //  relative to a piece of software is an objective fact these defaults can be easily reviewed.
+        // This setting doesn't force the selection of any particular chain but makes validating some faster by
+        //  effectively caching the result of part of the verification.
         // This setting doesn't force the selection of any particular chain but makes validating some faster by
         //  effectively caching the result of part of the verification.
         BlockMap::const_iterator  it = mapBlockIndex.find(hashAssumeValid);
@@ -5179,7 +5198,7 @@ bool RewindBlockIndex(const CChainParams& params)
         nHeight++;
     }
 
-    // nHeight is now the height of the first insufficiently-validated block, or tipheight + 1
+    // nHeight is now the height of the first insufficiently validated block, or tipheight + 1
     CValidationState state;
     CBlockIndex* pindex = chainActive.Tip();
     while (chainActive.Height() >= nHeight) {

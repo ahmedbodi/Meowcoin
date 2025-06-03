@@ -169,6 +169,17 @@ public:
               const Consensus::Params& params) const;
 
   /**
+   * Verify the auxpow in the context of a block header and its associated
+   * chainparams.  This calls check() and also verifies the parent block's
+   * proof of work.
+   * @param header The block header being verified.
+   * @param params The consensus parameters.
+   * @return True if the auxpow is valid and the parent block has valid PoW.
+   */
+  bool checkBlockHeader(const CBlockHeader& header,
+                        const Consensus::Params& params) const;
+
+  /**
    * Get the parent block's hash.  This is used to verify that it
    * satisfies the PoW requirement.
    * @return The parent block hash.

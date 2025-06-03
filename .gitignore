@@ -7,6 +7,9 @@ src/meowcoin
 src/meowcoind
 src/meowcoin-cli
 src/meowcoin-tx
+src/.temp/*
+src/node1/*
+src/node2/*
 src/test/test_meowcoin
 src/test/test_meowcoin_fuzzy
 src/test/test_meowcoin_hash

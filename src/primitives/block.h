@@ -60,6 +60,9 @@ public:
         // First serialize everything in CPureBlockHeader
         READWRITE(*(CPureBlockHeader*)this);
 
+        // Always serialize/deserialize the height for all block types
+        READWRITE(nHeight);
+
         if (nTime < nKAWPOWActivationTime || this->nVersion.IsAuxpow()) {
             // nNonce is already serialized in the base class, no need to do it again
             
@@ -73,7 +76,7 @@ public:
                 auxpow.reset();
             }
         } else {
-            READWRITE(nHeight);
+            // KAWPOW and MEOWPOW specific fields
             READWRITE(nNonce64);
             READWRITE(mix_hash);
         }
