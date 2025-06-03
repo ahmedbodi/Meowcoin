@@ -89,39 +89,10 @@ bool CAuxPow::check(const uint256& hashAuxBlock, int nChainId,
 #endif
 
 #if !AUXPOW_SKIP_POW_CHECK
-    // The parent block's proof of work is checked separately in CheckProofOfWork
-    // We do a basic check here to catch obvious errors
-    bool powOk = CheckProofOfWork(parentBlock.GetHash(), parentBlock.nBits, params);
-    if (!powOk) {
-        // Detailed logging for parent block PoW failure
-        LogPrintf("%s: Parent block PoW check FAILED\n", __func__);
-        LogPrintf("%s: Parent block hash: %s\n", __func__, parentBlock.GetHash().ToString());
-        LogPrintf("%s: Parent block bits: %08x\n", __func__, parentBlock.nBits);
-        
-        // Calculate and log the target based on parent block bits
-        bool fNegative;
-        bool fOverflow;
-        arith_uint256 bnParentTarget;
-        bnParentTarget.SetCompact(parentBlock.nBits, &fNegative, &fOverflow);
-        
-        if (fNegative || fOverflow || bnParentTarget == 0) {
-            LogPrintf("%s: ERROR: Invalid parent difficulty bits %08x (negative=%d, overflow=%d)\n", 
-                     __func__, parentBlock.nBits, fNegative, fOverflow);
-        } else {
-            LogPrintf("%s: Parent target value: %s\n", __func__, bnParentTarget.GetHex());
-            
-            // Convert parent hash to arith_uint256 for comparison
-            arith_uint256 bnParentHash = UintToArith256(parentBlock.GetHash());
-            LogPrintf("%s: Parent hash value: %s\n", __func__, bnParentHash.GetHex());
-            
-            // Calculate and log the ratio
-            double ratio = bnParentHash.getdouble() / bnParentTarget.getdouble();
-            LogPrintf("%s: Parent Hash/Target ratio: %.8f (ratio < 1.0 means valid PoW)\n", __func__, ratio);
-        }
-        
-        LogPrint(BCLog::AUXPOW, "%s: parent block has invalid proof of work, but continuing validation\n", __func__);
-        return error("%s: parent block has invalid proof of work", __func__);
-    }
+    // In merge mining, we shouldn't check the parent block's hash against its own target here.
+    // This check will be done properly in checkBlockHeader using the child chain's target.
+    // Just log the parent block hash for debugging purposes.
+    LogPrintf("%s: Parent block hash: %s\n", __func__, parentBlock.GetHash().ToString());
 #else
     // Skip parent block proof of work check as configured
     LogPrint(BCLog::AUXPOW, "%s: skipping parent block proof of work check\n", __func__);
@@ -255,71 +226,11 @@ bool CAuxPow::checkBlockHeader(const CBlockHeader& header, const Consensus::Para
     LogPrintf("%s: Parent hash value: %s\n", __func__, bnParentHash.GetHex());
 #endif
 
-#if AUXPOW_USE_PARENT_DIFFICULTY
-    // Extract parent block's bits from the parent block header
-    uint32_t parentBits = parentBlock.nBits;
-    arith_uint256 bnParentTarget;
-    
-    bnParentTarget.SetCompact(parentBits, &fNegative, &fOverflow);
-    if (fNegative || fOverflow || bnParentTarget == 0) {
-#if AUXPOW_ENABLE_LOGGING
-        LogPrintf("%s: ERROR: Invalid parent difficulty bits %08x (negative=%d, overflow=%d)\n", 
-                  __func__, parentBits, fNegative, fOverflow);
-#endif
-        return error("%s: invalid parent difficulty bits %08x", __func__, parentBits);
-    }
-
-#if AUXPOW_ENABLE_LOGGING
-    // Log parent target for comparison
-    LogPrintf("%s: Parent target bits: %08x\n", __func__, parentBits);
-    LogPrintf("%s: Parent target value: %s\n", __func__, bnParentTarget.GetHex());
-    
-    // Calculate and log the ratio of the parent hash to both targets
-    double childRatio = bnParentHash.getdouble() / bnChildTarget.getdouble();
-    double parentRatio = bnParentHash.getdouble() / bnParentTarget.getdouble();
-    
-    LogPrintf("%s: Hash/Child Target ratio: %.8f (ratio < 1.0 means valid PoW)\n", __func__, childRatio);
-    LogPrintf("%s: Hash/Parent Target ratio: %.8f (ratio < 1.0 means valid PoW)\n", __func__, parentRatio);
-#endif
-
-    // Check if the parent block hash meets its own difficulty target
-    if (bnParentHash > bnParentTarget) {
-#if AUXPOW_ENABLE_LOGGING
-        LogPrintf("%s: FAIL: Parent block hash is higher than parent target (invalid parent PoW)\n", __func__);
-        
-        // Log some statistics about how far off we are from valid PoW
-        unsigned int actualBits = bnParentHash.GetCompact();
-        LogPrintf("%s: Actual bits needed: %08x vs. parent bits: %08x\n", 
-                  __func__, actualBits, parentBits);
-        
-        // Calculate the number of leading zeros we have vs. need
-        int actualLeadingZeros = bnParentHash.bits() ? 256 - bnParentHash.bits() : 256;
-        int targetLeadingZeros = bnParentTarget.bits() ? 256 - bnParentTarget.bits() : 256;
-        LogPrintf("%s: Leading zeros: actual=%d, needed=%d (difference=%d)\n", 
-                  __func__, actualLeadingZeros, targetLeadingZeros, 
-                  targetLeadingZeros - actualLeadingZeros);
-#endif
-
-#if AUXPOW_SKIP_POW_CHECK
-        // Skip parent block proof of work check in development/debugging mode
-        LogPrintf("%s: OVERRIDE: Skipping parent block proof of work check as configured\n", __func__);
-#else
-        return error("%s: AUX proof of work failed against parent's own target", __func__);
-#endif
-    } else {
-#if AUXPOW_ENABLE_LOGGING
-        LogPrintf("%s: PASS: Parent block hash meets parent's target requirement\n", __func__);
-#endif
-    }
-    
-    // We're using the parent difficulty, so we skip the child target check
-#if AUXPOW_ENABLE_LOGGING
-    LogPrintf("%s: INFO: Using parent block's difficulty target instead of child's\n", __func__);
-#endif
-
-#else // not AUXPOW_USE_PARENT_DIFFICULTY
+    // TEMPORARY FIX: Force using child chain's difficulty regardless of AUXPOW_USE_PARENT_DIFFICULTY setting
     // Convert parent block hash to arith_uint256 for comparison with child target
+    #if !AUXPOW_ENABLE_LOGGING
     arith_uint256 bnParentHash = UintToArith256(parentBlockHash);
+    #endif
     
 #if AUXPOW_ENABLE_LOGGING
     // Calculate and log the ratio of the parent hash to the target
@@ -328,17 +239,17 @@ bool CAuxPow::checkBlockHeader(const CBlockHeader& header, const Consensus::Para
     LogPrintf("%s: Hash/Target ratio: %.8f (ratio < 1.0 means valid PoW)\n", __func__, ratio);
 #endif
     
+    // TEMPORARY FIX: Always compare against the child's target regardless of config setting
+    LogPrintf("%s: IMPORTANT: FORCING USE OF CHILD DIFFICULTY\n", __func__);
     if (bnParentHash > bnChildTarget) {
-#if AUXPOW_ENABLE_LOGGING
-        LogPrintf("%s: FAIL: Parent block hash is higher than child target (invalid PoW)\n", __func__);
-#endif
+        LogPrintf("%s: FAIL: Parent block hash is higher than child target\n", __func__);
         
 #if AUXPOW_SKIP_POW_CHECK
         // Skip parent block proof of work check in development/debugging mode
         LogPrintf("%s: OVERRIDE: Skipping parent block proof of work check as configured\n", __func__);
+        return true;
 #else
         // Log some statistics about how far off we are from valid PoW
-#if AUXPOW_ENABLE_LOGGING
         unsigned int actualBits = bnParentHash.GetCompact();
         LogPrintf("%s: Actual bits needed: %08x vs. target bits: %08x\n", 
                   __func__, actualBits, header.nBits);
@@ -349,17 +260,14 @@ bool CAuxPow::checkBlockHeader(const CBlockHeader& header, const Consensus::Para
         LogPrintf("%s: Leading zeros: actual=%d, needed=%d (difference=%d)\n", 
                   __func__, actualLeadingZeros, targetLeadingZeros, 
                   targetLeadingZeros - actualLeadingZeros);
-#endif
         
         return error("%s: AUX proof of work failed", __func__);
 #endif
     }
     
 #if AUXPOW_ENABLE_LOGGING
-    LogPrintf("%s: PASS: Parent block hash meets child's target requirement\n", __func__);
+    LogPrintf("%s: PASS: Parent block hash meets target requirement\n", __func__);
 #endif
-#endif // AUXPOW_USE_PARENT_DIFFICULTY
-    
     return true;
 }
 

@@ -36,6 +36,6 @@
  * This is more realistic for merge-mined chains where the parent chain might have
  * a different difficulty scale.
  */
-#define AUXPOW_USE_PARENT_DIFFICULTY 1
+#define AUXPOW_USE_PARENT_DIFFICULTY 0
 
 #endif // MEOWCOIN_PATCHCONFIG_H
