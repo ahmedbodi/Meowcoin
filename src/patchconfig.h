@@ -23,12 +23,19 @@
  * Skip parent block proof of work validation. This is useful for debugging
  * and initial auxpow implementation.
  */
-#define AUXPOW_SKIP_POW_CHECK 1
+#define AUXPOW_SKIP_POW_CHECK 0
 
 /**
  * Check detailed auxpow requirements including presence of merkle root
  * in coinbase. Set to 0 for less strict validation during debugging.
  */
 #define AUXPOW_STRICT_VALIDATION 1
+
+/**
+ * Accept parent block's own difficulty target instead of requiring child's difficulty.
+ * This is more realistic for merge-mined chains where the parent chain might have
+ * a different difficulty scale.
+ */
+#define AUXPOW_USE_PARENT_DIFFICULTY 1
 
 #endif // MEOWCOIN_PATCHCONFIG_H

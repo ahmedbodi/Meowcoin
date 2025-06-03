@@ -616,7 +616,7 @@ static bool AcceptToMemoryPoolWorker(const CChainParams& chainparams, CTxMemPool
         view.SetBackend(viewMemPool);
 
         // do all inputs exist?
-        for (const CTxIn txin : tx.vin) {
+        for (const CTxIn& txin : tx.vin) {
             if (!pcoinsTip->HaveCoinInCache(txin.prevout)) {
                 coins_to_uncache.push_back(txin.prevout);
             }
@@ -1267,52 +1267,79 @@ bool GetTransaction(const uint256 &hash, CTransactionRef &txOut, const Consensus
 
 bool CheckProofOfWork(const CBlockHeader& block, const Consensus::Params& params)
 {
+    LogPrintf("%s: Starting validation for block %s, height=%d\n", 
+              __func__, block.GetHash().ToString(), block.nHeight);
+
     /* Except for legacy blocks with full version 1, ensure that
        the chain ID is correct.  Legacy blocks are not allowed since
        the merge-mining start, which is checked in AcceptBlockHeader
        where the height is known.  */
     if (!block.nVersion.IsLegacy() && params.fStrictChainId
-        && block.nVersion.GetChainId() != params.nAuxpowChainId)
+        && block.nVersion.GetChainId() != params.nAuxpowChainId) {
+        LogPrintf("%s: ERROR - block does not have our chain ID (got %d, expected %d, full nVersion %d)\n",
+                 __func__, block.nVersion.GetChainId(), params.nAuxpowChainId, block.nVersion.GetFullVersion());
         return error("%s : block does not have our chain ID"
                      " (got %d, expected %d, full nVersion %d)",
                      __func__, block.nVersion.GetChainId(),
                      params.nAuxpowChainId, block.nVersion.GetFullVersion());
+    }
+
+    LogPrintf("%s: Block height: %d, Is auxpow: %s, Has auxpow: %s\n", 
+             __func__, block.nHeight, block.nVersion.IsAuxpow() ? "YES" : "NO", block.auxpow ? "YES" : "NO");
 
     /* If there is no auxpow, just check the block hash.  */
     if (!block.auxpow)
     {
-        if (block.nVersion.IsAuxpow())
+        if (block.nVersion.IsAuxpow()) {
+            LogPrintf("%s: ERROR - no auxpow on block with auxpow version\n", __func__);
             return error("%s : no auxpow on block with auxpow version",
                          __func__);
+        }
 
         if (block.nTime >= nKAWPOWActivationTime) {
             uint256 mix_hash;
-            if (!CheckProofOfWork(block.GetHashFull(mix_hash), block.nBits, params))
+            if (!CheckProofOfWork(block.GetHashFull(mix_hash), block.nBits, params)) {
+                LogPrintf("%s: ERROR - non-AUX KAWPOW proof of work failed\n", __func__);
                 return error("%s : non-AUX proof of work failed", __func__);
+            }
 
             if (mix_hash != block.mix_hash) {
+                LogPrintf("%s: ERROR - non-AUX mix_hash proof of work check failed\n", __func__);
                 return error("%s : non-AUX mix_hash proof of work check failed", __func__);
             }
         } else {
-            if (!CheckProofOfWork(block.GetHash(), block.nBits, params))
+            if (!CheckProofOfWork(block.GetHash(), block.nBits, params)) {
+                LogPrintf("%s: ERROR - non-AUX proof of work failed\n", __func__);
                 return error("%s : non-AUX proof of work failed", __func__);
+            }
         }
+        LogPrintf("%s: PASSED - Non-auxpow block passed proof of work check\n", __func__);
         return true;
     }
 
     /* We have auxpow. Use our helper function to validate it properly. */
-    if (!block.nVersion.IsAuxpow())
+    if (!block.nVersion.IsAuxpow()) {
+        LogPrintf("%s: ERROR - auxpow on block with non-auxpow version\n", __func__);
         return error("%s : auxpow on block with non-auxpow version", __func__);
+    }
 
     LogPrintf("%s : Checking AuxPow Block: %s", __func__, block.ToString().c_str());
-    LogPrint(BCLog::AUXPOW, "AuxPow Block height: %d\n", block.nHeight);
+    LogPrintf("AuxPow Block height: %d\n", block.nHeight);
 
     // Make sure auxpow is properly initialized
-    if (!block.auxpow)
+    if (!block.auxpow) {
+        LogPrintf("%s: ERROR - auxpow is null\n", __func__);
         return error("%s : auxpow is null", __func__);
+    }
 
     // Use the helper function to validate the auxpow completely
-    return block.auxpow->checkBlockHeader(block, params);
+    bool result = block.auxpow->checkBlockHeader(block, params);
+    if (!result) {
+        LogPrintf("%s: ERROR - auxpow check failed\n", __func__);
+    } else {
+        LogPrintf("%s: PASSED - Auxpow block passed all checks\n", __func__);
+    }
+    return result;
 }
 
 static bool WriteBlockToDisk(const CBlock& block, CDiskBlockPos& pos, const CMessageHeader::MessageStartChars& messageStart)
@@ -1360,10 +1387,10 @@ static bool ReadBlockOrHeader(T& block, const CDiskBlockPos& pos, const Consensu
     BlockMap::iterator mi = mapBlockIndex.find(hash);
     if (mi != mapBlockIndex.end() && mi->second) {
         block.nHeight = mi->second->nHeight;
-        LogPrint(BCLog::AUXPOW, "Setting block height to %d for block %s read from disk\n", 
+        LogPrintf("Setting block height to %d for block %s read from disk\n", 
                  block.nHeight, hash.ToString());
     } else {
-        LogPrint(BCLog::AUXPOW, "Block %s not found in mapBlockIndex, using height=0\n", 
+        LogPrintf("Block %s not found in mapBlockIndex, using height=0\n", 
                  hash.ToString());
         block.nHeight = 0;
     }
@@ -1387,6 +1414,8 @@ static bool ReadBlockOrHeader(T& block, const CBlockIndex* pindex, const Consens
     // Set the block height from the block index
     // This is critical for auxpow validation which relies on height
     block.nHeight = pindex->nHeight;
+    LogPrintf("Setting block height to %d for block %s read from disk\n", 
+             block.nHeight, pindex->GetBlockHash().ToString());
 
     return true;
 }
@@ -4208,35 +4237,42 @@ void UpdateUncommittedBlockStructures(CBlock& block, const CBlockIndex* pindexPr
 std::vector<unsigned char> GenerateCoinbaseCommitment(CBlock& block, const CBlockIndex* pindexPrev, const Consensus::Params& consensusParams)
 {
     std::vector<unsigned char> commitment;
+    
+    // Only generate witness commitment if SegWit is enabled
+    if (!consensusParams.nSegwitEnabled) {
+        UpdateUncommittedBlockStructures(block, pindexPrev, consensusParams);
+        return commitment; // Return empty commitment if SegWit is not enabled
+    }
+    
     int commitpos = GetWitnessCommitmentIndex(block);
     std::vector<unsigned char> ret(32, 0x00);
-    if(consensusParams.nSegwitEnabled) { // if (consensusParams.vDeployments[Consensus::DEPLOYMENT_SEGWIT].nTimeout != 0) {
-		if (commitpos == -1) {
-			uint256 witnessroot = BlockWitnessMerkleRoot(block, nullptr);
-			CHash256().Write(witnessroot.begin(), 32).Write(ret.data(), 32).Finalize(witnessroot.begin());
-			CTxOut out;
-			out.nValue = 0;
-			out.scriptPubKey.resize(38);
-			out.scriptPubKey[0] = OP_RETURN;
-			out.scriptPubKey[1] = 0x24;
-			out.scriptPubKey[2] = 0xaa;
-			out.scriptPubKey[3] = 0x21;
-			out.scriptPubKey[4] = 0xa9;
-			out.scriptPubKey[5] = 0xed;
-			memcpy(&out.scriptPubKey[6], witnessroot.begin(), 32);
-			commitment = std::vector<unsigned char>(out.scriptPubKey.begin(), out.scriptPubKey.end());
-			CMutableTransaction tx(*block.vtx[0]);
-			tx.vout.push_back(out);
-			block.vtx[0] = MakeTransactionRef(std::move(tx));
-		}
+    if (commitpos == -1) {
+        uint256 witnessroot = BlockWitnessMerkleRoot(block, nullptr);
+        CHash256().Write(witnessroot.begin(), 32).Write(ret.data(), 32).Finalize(witnessroot.begin());
+        CTxOut out;
+        out.nValue = 0;
+        out.scriptPubKey.resize(38);
+        out.scriptPubKey[0] = OP_RETURN;
+        out.scriptPubKey[1] = 0x24;
+        out.scriptPubKey[2] = 0xaa;
+        out.scriptPubKey[3] = 0x21;
+        out.scriptPubKey[4] = 0xa9;
+        out.scriptPubKey[5] = 0xed;
+        memcpy(&out.scriptPubKey[6], witnessroot.begin(), 32);
+        commitment = std::vector<unsigned char>(out.scriptPubKey.begin(), out.scriptPubKey.end());
+        CMutableTransaction tx(*block.vtx[0]);
+        tx.vout.push_back(out);
+        block.vtx[0] = MakeTransactionRef(std::move(tx));
     }
-	UpdateUncommittedBlockStructures(block, pindexPrev, consensusParams);
+    
+    UpdateUncommittedBlockStructures(block, pindexPrev, consensusParams);
     return commitment;
 }
 
 /** Context-dependent validity checks.
  *  By "context", we mean only the previous block headers, but not the UTXO
  *  set; UTXO-related validity checks are done in ConnectBlock(). */
+
 static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationState& state, const CChainParams& params, const CBlockIndex* pindexPrev, int64_t nAdjustedTime)
 {
     assert(pindexPrev != nullptr);
@@ -4308,11 +4344,15 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
     return true;
 }
 
+/** Context-dependent validity checks for full blocks (not just headers)
+ *  By "context", we mean only the previous block headers and the UTXO
+ *  set; UTXO-related validity checks that rely on the specific block
+ *  contents are done in ConnectBlock(). */
 static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev, CAssetsCache* assetCache)
 {
     const int nHeight = pindexPrev == nullptr ? 0 : pindexPrev->nHeight + 1;
 
-    // Start enforcing BIP113 (Median Time Past) using versionbits logic.
+    // Start enforcing BIP113 (Median Time Past)
     int nLockTimeFlags = 0;
     if(consensusParams.nCSVEnabled == true) {
     		nLockTimeFlags |= LOCKTIME_MEDIAN_TIME_PAST;
@@ -4326,6 +4366,11 @@ static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, c
     for (const auto& tx : block.vtx) {
         if (!IsFinalTx(*tx, nHeight, nLockTimeCutoff)) {
             return state.DoS(10, false, REJECT_INVALID, "bad-txns-nonfinal", false, "non-final transaction");
+        }
+        
+        // Special handling for asset transactions if applicable
+        if (assetCache != nullptr && AreAssetsDeployed()) {
+            // Asset-specific checks can go here if needed
         }
     }
 
@@ -4851,7 +4896,7 @@ bool static LoadBlockIndexDB(const CChainParams& chainparams)
     // Calculate nChainWork
     std::vector<std::pair<int, CBlockIndex*> > vSortedByHeight;
     vSortedByHeight.reserve(mapBlockIndex.size());
-    for (const std::pair<uint256, CBlockIndex*>& item : mapBlockIndex)
+    for (const std::pair<const uint256, CBlockIndex*>& item : mapBlockIndex)
     {
         CBlockIndex* pindex = item.second;
         vSortedByHeight.push_back(std::make_pair(pindex->nHeight, pindex));
@@ -4910,7 +4955,7 @@ bool static LoadBlockIndexDB(const CChainParams& chainparams)
     // Check presence of blk files
     LogPrintf("Checking all blk files are present...\n");
     std::set<int> setBlkDataFiles;
-    for (const std::pair<uint256, CBlockIndex*>& item : mapBlockIndex)
+    for (const std::pair<const uint256, CBlockIndex*>& item : mapBlockIndex)
     {
         CBlockIndex* pindex = item.second;
         if (pindex->nStatus & BLOCK_HAVE_DATA) {
