@@ -203,40 +203,14 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&
 
     // Check range
     if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit)) {
-        LogPrintf("CheckProofOfWork: FAILED on range check\n");
-        if (fNegative)
-            LogPrintf("  - Target is negative\n");
-        if (bnTarget == 0)
-            LogPrintf("  - Target is zero\n");
-        if (fOverflow)
-            LogPrintf("  - Target overflow\n");
-        if (bnTarget > UintToArith256(params.powLimit))
-            LogPrintf("  - Target %s exceeds pow limit %s\n", 
-                     bnTarget.GetHex(), UintToArith256(params.powLimit).GetHex());
         return false;
     }
 
     // Check proof of work matches claimed amount
     arith_uint256 bnHash = UintToArith256(hash);
     if (bnHash > bnTarget) {
-        LogPrintf("CheckProofOfWork: FAILED - hash doesn't meet target\n");
-        LogPrintf("  - Hash:   %s\n", bnHash.GetHex());
-        LogPrintf("  - Target: %s\n", bnTarget.GetHex());
-        
-        // Calculate the ratio for better understanding of how far off we are
-        double ratio = bnHash.getdouble() / bnTarget.getdouble();
-        LogPrintf("  - Ratio:  %.8f (ratio < 1.0 means valid PoW)\n", ratio);
-        
-        // Count leading zeros for more intuitive comparison
-        int hashLeadingZeros = bnHash.bits() ? 256 - bnHash.bits() : 256;
-        int targetLeadingZeros = bnTarget.bits() ? 256 - bnTarget.bits() : 256;
-        LogPrintf("  - Leading zeros: hash=%d, target=%d (diff=%d)\n", 
-                 hashLeadingZeros, targetLeadingZeros, targetLeadingZeros - hashLeadingZeros);
-        
         return false;
     }
 
-    LogPrintf("CheckProofOfWork: PASSED - hash %s meets target %s\n", 
-             bnHash.GetHex(), bnTarget.GetHex());
     return true;
 }
