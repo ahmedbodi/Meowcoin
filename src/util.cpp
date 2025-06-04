@@ -225,7 +225,7 @@ struct CLogCategoryDesc
     std::string category;
 };
 
-static CLogCategoryDesc LogCategories[] =
+const CLogCategoryDesc LogCategories[] =
         {
                 {BCLog::NONE,        "0"},
                 {BCLog::NONE,        "none"},
