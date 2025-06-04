@@ -49,6 +49,8 @@ unsigned int static DarkGravityWave(const CBlockIndex* pindexLast, const CBlockH
 
     int nKAWPOWBlocksFound = 0;
     int nMEOWPOWBlocksFound = 0;
+    int nAuxPOWBlocksFound = 0;  // Track AuxPOW blocks
+    
     for (unsigned int nCountBlocks = 1; nCountBlocks <= nPastBlocks; nCountBlocks++) {
         arith_uint256 bnTarget = arith_uint256().SetCompact(pindex->nBits);
         if (nCountBlocks == 1) {
@@ -64,8 +66,13 @@ unsigned int static DarkGravityWave(const CBlockIndex* pindexLast, const CBlockH
         }
 
         // Count how blocks are MEOWPOW mined in the last 180 blocks
-        if (pindex->nTime >= nMEOWPOWActivationTime) {
+        if (pindex->nTime >= nMEOWPOWActivationTime && !pindex->nVersion.IsAuxpow()) {
             nMEOWPOWBlocksFound++;
+        }
+        
+        // Count how blocks are AuxPOW (Scrypt) mined in the last 180 blocks
+        if (pindex->nVersion.IsAuxpow()) {
+            nAuxPOWBlocksFound++;
         }
 
         if(nCountBlocks != nPastBlocks) {
@@ -74,11 +81,19 @@ unsigned int static DarkGravityWave(const CBlockIndex* pindexLast, const CBlockH
         }
     }
 
+    // Always print block distribution stats to make it very visible for debugging
+    LogPrintf("==== MINING DISTRIBUTION STATS at height %d ====\n", pindexLast->nHeight + 1);
+    LogPrintf("MeowPOW blocks: %d (%.2f%%)\n", nMEOWPOWBlocksFound, (double)nMEOWPOWBlocksFound * 100.0 / nPastBlocks);
+    LogPrintf("AuxPOW blocks: %d (%.2f%%)\n", nAuxPOWBlocksFound, (double)nAuxPOWBlocksFound * 100.0 / nPastBlocks);
+    LogPrintf("KAWPOW blocks: %d (%.2f%%)\n", nKAWPOWBlocksFound, (double)nKAWPOWBlocksFound * 100.0 / nPastBlocks);
+    LogPrintf("Target ratio: 50/50 MeowPOW/AuxPOW\n");
+    LogPrintf("==== END STATS ====\n");
+
     // If we are mining a KAWPOW block. We check to see if we have mined
-    // 180 KAWPOW or MEOWPOW blocks already. If we haven't we are going to return our
+    // 180 KAWPOW blocks already. If we haven't we are going to return our
     // temp limit. This will allow us to change algos to kawpow without having to
     // change the DGW math.
- if (pblock->nTime >= nKAWPOWActivationTime && pblock->nTime < nMEOWPOWActivationTime) {
+    if (pblock->nTime >= nKAWPOWActivationTime && pblock->nTime < nMEOWPOWActivationTime) {
         if (nKAWPOWBlocksFound != nPastBlocks) {
             const arith_uint256 bnKawPowLimit = UintToArith256(params.kawpowLimit);
             return bnKawPowLimit.GetCompact();
@@ -86,11 +101,53 @@ unsigned int static DarkGravityWave(const CBlockIndex* pindexLast, const CBlockH
     }
 
     //Meowpow
-    if (pblock->nTime >= nMEOWPOWActivationTime) {
+    if (pblock->nTime >= nMEOWPOWActivationTime && !pblock->nVersion.IsAuxpow()) {
         if (nMEOWPOWBlocksFound != nPastBlocks) {
             const arith_uint256 bnMeowPowLimit = UintToArith256(params.meowpowLimit);
             return bnMeowPowLimit.GetCompact();
         }
+    }
+    
+    //AuxPOW (Scrypt)
+    if (pblock->nVersion.IsAuxpow()) {
+        // Calculate the target ratio between AuxPOW and MeowPOW
+        // Ideally, we want approximately 50/50 distribution of blocks
+        
+        // Get the percentage of AuxPOW blocks in the past window
+        double auxPowPercentage = (double)nAuxPOWBlocksFound / nPastBlocks;
+        
+        // Calculate adjustment factor to bring us closer to 50/50
+        // If we have more than 50% AuxPOW blocks, increase difficulty
+        // If we have less than 50% AuxPOW blocks, decrease difficulty
+        double targetPercentage = 0.5; // We want 50% AuxPOW blocks
+        double adjustmentFactor = 1.0;
+        
+        if (auxPowPercentage > 0) {
+            adjustmentFactor = targetPercentage / auxPowPercentage;
+            
+            // Limit extreme adjustments
+            if (adjustmentFactor > 4.0) adjustmentFactor = 4.0;
+            if (adjustmentFactor < 0.25) adjustmentFactor = 0.25;
+        }
+        
+        // Log the difficulty adjustment for AuxPOW
+        LogPrintf("AuxPOW difficulty adjustment: current percentage=%.2f%%, target=%.2f%%, adjustment factor=%.4f\n", 
+                 auxPowPercentage * 100.0, targetPercentage * 100.0, adjustmentFactor);
+        
+        // Adjust the target based on our calculated factor
+        arith_uint256 bnNew(bnPastTargetAvg);
+        bnNew *= adjustmentFactor;
+        
+        // Make sure we don't exceed the proof of work limit
+        if (bnNew > bnPowLimit) {
+            bnNew = bnPowLimit;
+        }
+        
+        // Log the final difficulty target
+        LogPrintf("AuxPOW new target: %s (bits=%08x)\n", 
+                 bnNew.ToString(), bnNew.GetCompact());
+        
+        return bnNew.GetCompact();
     }
 
     arith_uint256 bnNew(bnPastTargetAvg);
@@ -202,12 +259,20 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&
     bnTarget.SetCompact(nBits, &fNegative, &fOverflow);
 
     // Check range
-    if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit))
+    if (fNegative || bnTarget == 0 || fOverflow)
+        return false;
+
+    // Use the right limit based on the bits value
+    // The nBits value already encodes which algorithm we're using
+    if (bnTarget > UintToArith256(params.powLimit))
         return false;
 
     // Check proof of work matches claimed amount
-    if (UintToArith256(hash) > bnTarget)
+    if (UintToArith256(hash) > bnTarget) {
+        LogPrint(BCLog::AUXPOW, "CheckProofOfWork: hash %s is greater than target %s\n", 
+                hash.ToString(), bnTarget.ToString());
         return false;
+    }
 
     return true;
 }

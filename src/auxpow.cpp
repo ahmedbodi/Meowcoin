@@ -193,8 +193,10 @@ bool CAuxPow::checkBlockHeader(const CBlockHeader& header, const Consensus::Para
     // Convert parent block hash to arith_uint256 for comparison
     arith_uint256 bnParentHash = UintToArith256(parentBlockHash);
     
-    // In AuxPoW, we check the parent hash against the child chain's difficulty
     // Compare the parent hash against the child's target (aux chain's difficulty)
+    LogPrint(BCLog::AUXPOW, "Checking AuxPOW: parent hash=%s, child target=%s\n", 
+             parentBlockHash.ToString(), bnChildTarget.ToString());
+    
     if (bnParentHash > bnChildTarget) {
         // Log some statistics about how far off we are from valid PoW
         unsigned int actualBits = bnParentHash.GetCompact();

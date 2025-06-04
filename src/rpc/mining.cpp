@@ -1466,6 +1466,17 @@ UniValue AuxMiningCreateBlock(const CScript& scriptPubKey)
         IncrementExtraNonce(&newBlock->block, pindexPrev, nExtraNonce);
         newBlock->block.nVersion.SetAuxpow(true);
 
+        // Get the adjusted difficulty bits for AuxPOW using the dual-algorithm difficulty adjustment
+        const Consensus::Params& consensusParams = GetParams().GetConsensus();
+        unsigned int originalBits = newBlock->block.nBits;
+        unsigned int nBits = GetNextWorkRequired(pindexPrev, &newBlock->block, consensusParams);
+        
+        // Set the bits on the block - this is crucial for the correct difficulty
+        newBlock->block.nBits = nBits;
+        
+        LogPrintf("AuxMiningCreateBlock: Using adjusted nBits for AuxPOW: %08x (previous was %08x)\n", 
+                  nBits, originalBits);
+
         // Save
         pblock = &newBlock->block;
         mapNewBlock[pblock->GetHash()] = pblock;
