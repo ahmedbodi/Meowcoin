@@ -1267,79 +1267,56 @@ bool GetTransaction(const uint256 &hash, CTransactionRef &txOut, const Consensus
 
 bool CheckProofOfWork(const CBlockHeader& block, const Consensus::Params& params)
 {
-    LogPrintf("%s: Starting validation for block %s, height=%d\n", 
-              __func__, block.GetHash().ToString(), block.nHeight);
-
     /* Except for legacy blocks with full version 1, ensure that
        the chain ID is correct.  Legacy blocks are not allowed since
        the merge-mining start, which is checked in AcceptBlockHeader
        where the height is known.  */
     if (!block.nVersion.IsLegacy() && params.fStrictChainId
-        && block.nVersion.GetChainId() != params.nAuxpowChainId) {
-        LogPrintf("%s: ERROR - block does not have our chain ID (got %d, expected %d, full nVersion %d)\n",
-                 __func__, block.nVersion.GetChainId(), params.nAuxpowChainId, block.nVersion.GetFullVersion());
+        && block.nVersion.GetChainId() != params.nAuxpowChainId)
         return error("%s : block does not have our chain ID"
                      " (got %d, expected %d, full nVersion %d)",
                      __func__, block.nVersion.GetChainId(),
                      params.nAuxpowChainId, block.nVersion.GetFullVersion());
-    }
-
-    LogPrintf("%s: Block height: %d, Is auxpow: %s, Has auxpow: %s\n", 
-             __func__, block.nHeight, block.nVersion.IsAuxpow() ? "YES" : "NO", block.auxpow ? "YES" : "NO");
 
     /* If there is no auxpow, just check the block hash.  */
     if (!block.auxpow)
     {
-        if (block.nVersion.IsAuxpow()) {
-            LogPrintf("%s: ERROR - no auxpow on block with auxpow version\n", __func__);
+        if (block.nVersion.IsAuxpow())
             return error("%s : no auxpow on block with auxpow version",
                          __func__);
-        }
 
         if (block.nTime >= nKAWPOWActivationTime) {
             uint256 mix_hash;
             if (!CheckProofOfWork(block.GetHashFull(mix_hash), block.nBits, params)) {
-                LogPrintf("%s: ERROR - non-AUX KAWPOW proof of work failed\n", __func__);
                 return error("%s : non-AUX proof of work failed", __func__);
             }
 
             if (mix_hash != block.mix_hash) {
-                LogPrintf("%s: ERROR - non-AUX mix_hash proof of work check failed\n", __func__);
                 return error("%s : non-AUX mix_hash proof of work check failed", __func__);
             }
         } else {
             if (!CheckProofOfWork(block.GetHash(), block.nBits, params)) {
-                LogPrintf("%s: ERROR - non-AUX proof of work failed\n", __func__);
                 return error("%s : non-AUX proof of work failed", __func__);
             }
         }
-        LogPrintf("%s: PASSED - Non-auxpow block passed proof of work check\n", __func__);
         return true;
     }
 
     /* We have auxpow. Use our helper function to validate it properly. */
     if (!block.nVersion.IsAuxpow()) {
-        LogPrintf("%s: ERROR - auxpow on block with non-auxpow version\n", __func__);
         return error("%s : auxpow on block with non-auxpow version", __func__);
     }
 
-    LogPrintf("%s : Checking AuxPow Block: %s", __func__, block.ToString().c_str());
-    LogPrintf("AuxPow Block height: %d\n", block.nHeight);
+    LogPrint(BCLog::AUXPOW, "%s : Checking AuxPow Block: %s", __func__, block.ToString().c_str());
+    LogPrint(BCLog::AUXPOW, "AuxPow Block height: %d\n", block.nHeight);
 
     // Make sure auxpow is properly initialized
     if (!block.auxpow) {
-        LogPrintf("%s: ERROR - auxpow is null\n", __func__);
         return error("%s : auxpow is null", __func__);
     }
 
     // Use the helper function to validate the auxpow completely
-    bool result = block.auxpow->checkBlockHeader(block, params);
-    if (!result) {
-        LogPrintf("%s: ERROR - auxpow check failed\n", __func__);
-    } else {
-        LogPrintf("%s: PASSED - Auxpow block passed all checks\n", __func__);
-    }
-    return result;
+    return block.auxpow->checkBlockHeader(block, params);
 }
 
 static bool WriteBlockToDisk(const CBlock& block, CDiskBlockPos& pos, const CMessageHeader::MessageStartChars& messageStart)
@@ -1387,10 +1364,10 @@ static bool ReadBlockOrHeader(T& block, const CDiskBlockPos& pos, const Consensu
     BlockMap::iterator mi = mapBlockIndex.find(hash);
     if (mi != mapBlockIndex.end() && mi->second) {
         block.nHeight = mi->second->nHeight;
-        LogPrintf("Setting block height to %d for block %s read from disk\n", 
+        LogPrint(BCLog::AUXPOW, "Setting block height to %d for block %s read from disk\n", 
                  block.nHeight, hash.ToString());
     } else {
-        LogPrintf("Block %s not found in mapBlockIndex, using height=0\n", 
+        LogPrint(BCLog::AUXPOW, "Block %s not found in mapBlockIndex, using height=0\n", 
                  hash.ToString());
         block.nHeight = 0;
     }
@@ -4366,11 +4343,6 @@ static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, c
     for (const auto& tx : block.vtx) {
         if (!IsFinalTx(*tx, nHeight, nLockTimeCutoff)) {
             return state.DoS(10, false, REJECT_INVALID, "bad-txns-nonfinal", false, "non-final transaction");
-        }
-        
-        // Special handling for asset transactions if applicable
-        if (assetCache != nullptr && AreAssetsDeployed()) {
-            // Asset-specific checks can go here if needed
         }
     }
 

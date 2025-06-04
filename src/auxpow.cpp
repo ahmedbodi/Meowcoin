@@ -87,9 +87,7 @@ bool CAuxPow::check(const uint256& hashAuxBlock, int nChainId,
 
     // In merge mining, we shouldn't check the parent block's hash against its own target here.
     // This check will be done properly in checkBlockHeader using the child chain's target.
-    // Just log the parent block hash for debugging purposes.
-    LogPrintf("%s: Parent block hash: %s\n", __func__, parentBlock.GetHash().ToString());
-
+    
     if (vChainMerkleBranch.size() > 30)
         return error("%s: aux POW chain merkle branch too long %d", __func__,
                      vChainMerkleBranch.size());
@@ -180,13 +178,6 @@ bool CAuxPow::checkBlockHeader(const CBlockHeader& header, const Consensus::Para
     // For AuxPoW blocks, the proof of work check needs to be done against the parent block's hash
     uint256 parentBlockHash = getParentBlockHash();
     
-    // Log detailed information for debugging
-    LogPrintf("%s: ---- Detailed AuxPoW PoW Validation ----\n", __func__);
-    LogPrintf("%s: Block height: %d\n", __func__, header.nHeight);
-    LogPrintf("%s: Child block hash: %s\n", __func__, header.GetHash().ToString());
-    LogPrintf("%s: Parent block hash: %s\n", __func__, parentBlockHash.ToString());
-    LogPrintf("%s: Child target bits: %08x\n", __func__, header.nBits);
-
     // Calculate the hash target based on the bits value from the child block
     bool fNegative;
     bool fOverflow;
@@ -196,30 +187,15 @@ bool CAuxPow::checkBlockHeader(const CBlockHeader& header, const Consensus::Para
     
     // Check for negative or overflow
     if (fNegative || fOverflow || bnChildTarget == 0) {
-        LogPrintf("%s: ERROR: Invalid difficulty bits %08x (negative=%d, overflow=%d)\n", 
-                  __func__, header.nBits, fNegative, fOverflow);
         return error("%s: invalid difficulty bits %08x", __func__, header.nBits);
     }
 
-    // Log target in hex format
-    LogPrintf("%s: Child target value: %s\n", __func__, bnChildTarget.GetHex());
-    
     // Convert parent block hash to arith_uint256 for comparison
     arith_uint256 bnParentHash = UintToArith256(parentBlockHash);
     
-    // Log parent hash in hex format for comparison
-    LogPrintf("%s: Parent hash value: %s\n", __func__, bnParentHash.GetHex());
-
     // In AuxPoW, we check the parent hash against the child chain's difficulty
-    // Calculate and log the ratio of the parent hash to the target
-    double ratio = bnParentHash.getdouble() / bnChildTarget.getdouble();
-    LogPrintf("%s: Hash/Target ratio: %.8f (ratio < 1.0 means valid PoW)\n", __func__, ratio);
-    
     // Compare the parent hash against the child's target (aux chain's difficulty)
-    LogPrintf("%s: Checking parent hash against child chain difficulty\n", __func__);
     if (bnParentHash > bnChildTarget) {
-        LogPrintf("%s: FAIL: Parent block hash is higher than child target\n", __func__);
-        
         // Log some statistics about how far off we are from valid PoW
         unsigned int actualBits = bnParentHash.GetCompact();
         LogPrintf("%s: Actual bits needed: %08x vs. target bits: %08x\n", 
@@ -235,7 +211,6 @@ bool CAuxPow::checkBlockHeader(const CBlockHeader& header, const Consensus::Para
         return error("%s: AUX proof of work failed", __func__);
     }
     
-    LogPrintf("%s: PASS: Parent block hash meets target requirement\n", __func__);
     return true;
 }
 
