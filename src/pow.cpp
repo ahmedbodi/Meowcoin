@@ -85,7 +85,6 @@ unsigned int static DarkGravityWave(const CBlockIndex* pindexLast, const CBlockH
     LogPrintf("==== MINING DISTRIBUTION STATS at height %d ====\n", pindexLast->nHeight + 1);
     LogPrintf("MeowPOW blocks: %d (%.2f%%)\n", nMEOWPOWBlocksFound, (double)nMEOWPOWBlocksFound * 100.0 / nPastBlocks);
     LogPrintf("AuxPOW blocks: %d (%.2f%%)\n", nAuxPOWBlocksFound, (double)nAuxPOWBlocksFound * 100.0 / nPastBlocks);
-    LogPrintf("KAWPOW blocks: %d (%.2f%%)\n", nKAWPOWBlocksFound, (double)nKAWPOWBlocksFound * 100.0 / nPastBlocks);
     LogPrintf("Target ratio: 50/50 MeowPOW/AuxPOW\n");
     LogPrintf("==== END STATS ====\n");
 
