@@ -18,6 +18,7 @@ static const uint32_t REGTEST_X16RV2ACTIVATIONTIME = 1569931200;
 
 uint32_t nKAWPOWActivationTime;
 uint32_t nMEOWPOWActivationTime;
+uint32_t nAUXPOWActivationTime;
 
 BlockNetwork bNetwork = BlockNetwork();
 

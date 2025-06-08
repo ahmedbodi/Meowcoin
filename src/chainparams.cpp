@@ -292,6 +292,8 @@ public:
 
         nMEOWWWWPOWActivationTime = 1710799200; // March 18 2024 -- 3pm PST
         nMEOWPOWActivationTime = nMEOWWWWPOWActivationTime;
+        
+        nAUXPOWActivationTime = 1765775253; // Mon Dec 15 2025 05:07:33 GMT+0000 TO BE CHANGED
         /** MEWC End **/
     }
 };
@@ -459,6 +461,8 @@ public:
 
         nMEOWWWWPOWActivationTime = 1707354000; // Feb 4, 2024
         nMEOWPOWActivationTime = nMEOWWWWPOWActivationTime;
+        
+        nAUXPOWActivationTime = 1749960453; // Sun Jun 15 2025 07:00:00 GMT+0000
         /** MEWC End **/
     }
 };
@@ -618,6 +622,8 @@ public:
 
         nMEOWWWWPOWActivationTime = 3582830167; // March 1, 2024
         nMEOWPOWActivationTime = nMEOWWWWPOWActivationTime;
+        
+        nAUXPOWActivationTime = 3582830167; // Far future date
         /** MEWC End **/
     }
 };

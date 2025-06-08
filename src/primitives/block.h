@@ -24,6 +24,7 @@
 
 extern uint32_t nKAWPOWActivationTime;
 extern uint32_t nMEOWPOWActivationTime;
+extern uint32_t nAUXPOWActivationTime;
 
 class BlockNetwork
 {

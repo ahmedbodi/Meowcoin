@@ -171,6 +171,12 @@ bool CAuxPow::checkBlockHeader(const CBlockHeader& header, const Consensus::Para
                     __func__, header.nHeight, params.nAuxpowStartHeight);
     }
 
+    // Verify that the block time is after the auxpow activation time
+    if (header.nTime < nAUXPOWActivationTime) {
+        return error("%s: auxpow block time %u is before auxpow activation time %u",
+                    __func__, header.nTime, nAUXPOWActivationTime);
+    }
+
     // First verify that the chain merkle branches and coinbase references are valid
     if (!check(header.GetHash(), header.nVersion.GetChainId(), params))
         return false;

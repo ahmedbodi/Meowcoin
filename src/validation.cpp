@@ -1307,6 +1307,12 @@ bool CheckProofOfWork(const CBlockHeader& block, const Consensus::Params& params
         return error("%s : auxpow on block with non-auxpow version", __func__);
     }
 
+    // Check if the block time is at or after the AuxPoW activation time
+    if (block.nTime < nAUXPOWActivationTime) {
+        return error("%s : auxpow block time %u is before auxpow activation time %u",
+                    __func__, block.nTime, nAUXPOWActivationTime);
+    }
+
     LogPrint(BCLog::AUXPOW, "%s : Checking AuxPow Block: %s", __func__, block.ToString().c_str());
     LogPrint(BCLog::AUXPOW, "AuxPow Block height: %d\n", block.nHeight);
 
@@ -3709,7 +3715,8 @@ static void NotifyHeaderTip() {
  * or an activated best chain. pblock is either nullptr or a pointer to a block
  * that is already loaded (to avoid loading it again from disk).
  */
-bool ActivateBestChain(CValidationState &state, const CChainParams& chainparams, std::shared_ptr<const CBlock> pblock) {
+bool ActivateBestChain(CValidationState &state, const CChainParams& chainparams, std::shared_ptr<const CBlock> pblock)
+{
     // Note that while we're often called here from ProcessNewBlock, this is
     // far from a guarantee. Things in the P2P/RPC will often end up calling
     // us in the middle of ProcessNewBlock - do not assume pblock is set
@@ -4275,6 +4282,10 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
 
     if (!consensusParams.AllowLegacyBlocks(nHeight) && block.nVersion.IsLegacy())
         return state.DoS(100, error("%s : legacy block after auxpow start", __func__), REJECT_INVALID, "late-legacy-block");
+
+    // Check for auxpow version before activation time
+    if (block.nVersion.IsAuxpow() && block.nTime < nAUXPOWActivationTime)
+        return state.DoS(100, error("%s : auxpow block before auxpow activation time", __func__), REJECT_INVALID, "early-auxpow-block");
 
     // Check proof of work
     if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
