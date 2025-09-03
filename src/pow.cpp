@@ -115,6 +115,209 @@ unsigned int static DarkGravityWave(const CBlockIndex* pindexLast, const CBlockH
     return bnNew.GetCompact();
 }
 
+unsigned int DarkGravityWave3(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params, bool fIsAuxPow) {
+    /* difficulty formula, DarkGravity v3, written by Evan Duffield - evan@darkcoin.io */
+    const CBlockIndex *pindex = pindexLast;
+
+    long long nActualTimespan = 0;
+    long long LastBlockTime = 0;
+    long long PastBlocksMin = 180;
+    long long PastBlocksMax = 180;
+    long long CountBlocks = 0;
+    arith_uint256 PastDifficultyAverage;
+    arith_uint256 PastDifficultyAveragePrev;
+    PowAlgo algo = pblock->nVersion.GetAlgo();
+    if (fIsAuxPow) {
+        algo = PowAlgo::SCRYPT;
+    }
+
+    const arith_uint256 bnPowLimit = UintToArith256(params.powLimit[static_cast<uint8_t>(algo)]);
+
+    if (!pindexLast || pindexLast->nHeight < PastBlocksMin)
+    {
+        return bnPowLimit.GetCompact();
+    }
+
+    while (pindex && pindex->nHeight > 0)
+    {
+        if (PastBlocksMax > 0 && CountBlocks >= PastBlocksMax) {
+        	break;
+        }
+
+        // we only consider proof-of-work blocks for the configured mining algo here
+        if (pindex->nVersion.GetAlgo() != algo)
+        {
+        	pindex = pindex->pprev;
+            continue;
+        }
+
+        CountBlocks++;
+
+		if (CountBlocks <= PastBlocksMin)
+        {
+			if (CountBlocks == 1) {
+				PastDifficultyAverage.SetCompact(pindex->nBits);
+            }
+			else
+            {
+				PastDifficultyAverage =
+					((PastDifficultyAveragePrev * CountBlocks) + (arith_uint256().SetCompact(pindex->nBits))) / (CountBlocks + 1);
+            }
+			PastDifficultyAveragePrev = PastDifficultyAverage;
+		}
+
+        if (LastBlockTime > 0){
+        	long long Diff = (LastBlockTime - pindex->GetBlockTime());
+            nActualTimespan += Diff;
+        }
+        LastBlockTime = pindex->GetBlockTime();
+
+        if (pindex->pprev == NULL) {
+            assert(pindex);
+            break;
+        }
+        pindex = pindex->pprev;
+    }
+
+    if (!CountBlocks)
+        return bnPowLimit.GetCompact();
+
+    arith_uint256 bnNew(PastDifficultyAverage);
+
+    long long nTargetTimespan = CountBlocks * params.nPowTargetSpacing;
+
+    if (nActualTimespan < nTargetTimespan/3)
+        nActualTimespan = nTargetTimespan/3;
+
+    if (nActualTimespan > nTargetTimespan*3)
+        nActualTimespan = nTargetTimespan*3;
+
+    // Retarget
+    bnNew *= nActualTimespan;
+    bnNew /= nTargetTimespan;
+
+    if (bnNew > bnPowLimit) {
+        bnNew = bnPowLimit;
+    }
+
+    return bnNew.GetCompact();
+}
+
+// LWMA-1 for BTC & Zcash clones
+// Copyright (c) 2017-2019 The Bitcoin Gold developers, Zawy, iamstenman (Microbitcoin)
+// MIT License
+// Algorithm by Zawy, a modification of WT-144 by Tom Harding
+// For updates see
+// https://github.com/zawy12/difficulty-algorithms/issues/3#issuecomment-442129791
+// Do not use Zcash's / Digishield's method of ignoring the ~6 most recent 
+// timestamps via the median past timestamp (MTP of 11).
+// Changing MTP to 1 instead of 11 enforces sequential timestamps. Not doing this was the
+// most serious, problematic, & fundamental consensus theory mistake made in bitcoin but
+// this change may require changes elsewhere such as creating block headers or what pools do.
+//  FTL for CAT is 45 * (10 * 60)/ 20 == 1350 
+//  FTL should be lowered to about N*T/20.
+//  FTL in BTC clones is MAX_FUTURE_BLOCK_TIME in chain.h.
+//  FTL in Ignition, Numus, and others can be found in main.h as DRIFT.
+//  FTL in Zcash & Dash clones need to change the 2*60*60 here:
+//  if (block.GetBlockTime() > nAdjustedTime + 2 * 60 * 60)
+//  which is around line 3700 in main.cpp in ZEC and validation.cpp in Dash
+//  If your coin uses median network time instead of node's time, the "revert to 
+//  node time" rule (70 minutes in BCH, ZEC, & BTC) should be reduced to FTL/2 
+//  to prevent 33% Sybil attack that can manipulate difficulty via timestamps. See:
+// https://github.com/zcash/zcash/issues/4021
+unsigned int GetNextWorkRequired_LWMA_MultiAlgo(
+    const CBlockIndex* pindexLast,
+    const CBlockHeader* pblock,
+    const Consensus::Params& params,
+    bool fIsAuxPow)
+{
+    assert(pindexLast != nullptr);
+
+    // Base chain design target (e.g., 60s for the whole chain)
+    const int64_t T_chain = params.nPowTargetSpacing;
+
+    // Number of parallel algos contributing blocks
+    const int64_t ALGOS = 2; // MeowPow + AuxPoW
+
+    // Effective per-algo target to achieve ~T_chain overall:
+    // with 2 algos ~50/50, set per-algo to 2 * T_chain = 120s
+    const int64_t T = T_chain * ALGOS;
+
+    const int64_t N = params.nLwmaAveragingWindow;
+    const int64_t k = N * (N + 1) * T / 2;   // includes per-algo T (now 120s)
+    const int64_t height = pindexLast->nHeight;
+
+    PowAlgo algo = pblock->nVersion.GetAlgo();
+    if (fIsAuxPow) {
+        algo = PowAlgo::SCRYPT; // AuxPoW always uses Scrypt difficulty
+    }
+
+    const arith_uint256 powLimit =
+        UintToArith256(params.powLimit[static_cast<uint8_t>(algo)]);
+
+    if (height < N) {
+        return powLimit.GetCompact();
+    }
+
+    // Gather last N+1 blocks of the SAME algo
+    std::vector<const CBlockIndex*> sameAlgo;
+    sameAlgo.reserve(N + 1);
+
+    int searchLimit = std::min<int64_t>(height, N * 10);
+    for (int64_t h = height; h >= 0
+         && (int)sameAlgo.size() < (N + 1)
+         && (height - h) <= searchLimit; --h) {
+        const CBlockIndex* bi = pindexLast->GetAncestor(h);
+        if (!bi) break;
+        PowAlgo bialgo = bi->GetBlockHeader(params).nVersion.GetAlgo();
+        if (bialgo == algo) sameAlgo.push_back(bi);
+    }
+
+    if ((int)sameAlgo.size() < (N + 1)) {
+        if (!sameAlgo.empty()) return sameAlgo.front()->nBits;
+        return powLimit.GetCompact();
+    }
+
+    std::reverse(sameAlgo.begin(), sameAlgo.end()); // oldest -> newest
+
+    arith_uint256 sumTargets;                 // Σ target_i
+    int64_t sumWeightedSolvetimes = 0;        // Σ i * solvetime_i
+
+    int64_t prevTs = sameAlgo[0]->GetBlockTime();
+
+    for (int64_t i = 1; i <= N; ++i) {
+        const CBlockIndex* blk = sameAlgo[i];
+
+        int64_t ts = blk->GetBlockTime();
+        if (ts <= prevTs) ts = prevTs + 1;
+
+        int64_t st = ts - prevTs;
+        prevTs = ts;
+
+        // Clamp relative to the per-algo target (now 120s)
+        if (st < 1) st = 1;
+        if (st > 6 * T) st = 6 * T;
+
+        sumWeightedSolvetimes += (int64_t)i * st;
+
+        arith_uint256 tgt; tgt.SetCompact(blk->nBits);
+        sumTargets += tgt;
+    }
+
+    arith_uint256 avgTarget = sumTargets / N;
+
+    // LWMA-1 with k = N*(N+1)*T/2  (T is per-algo target)
+    arith_uint256 nextTarget = avgTarget;
+    if (sumWeightedSolvetimes < 1) sumWeightedSolvetimes = 1;
+    nextTarget *= (uint64_t)sumWeightedSolvetimes;
+    nextTarget /= (uint64_t)k;
+
+    if (nextTarget > powLimit) nextTarget = powLimit;
+
+    return nextTarget.GetCompact();
+}
+
+
 unsigned int GetNextWorkRequiredBTC(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
     assert(pindexLast != nullptr);
@@ -151,206 +354,13 @@ unsigned int GetNextWorkRequiredBTC(const CBlockIndex* pindexLast, const CBlockH
     return CalculateNextWorkRequired(pindexLast, pindexFirst->GetBlockTime(), params);
 }
 
-// LWMA-1 for BTC & Zcash clones
-// Copyright (c) 2017-2019 The Bitcoin Gold developers, Zawy, iamstenman (Microbitcoin)
-// MIT License
-// Algorithm by Zawy, a modification of WT-144 by Tom Harding
-// For updates see
-// https://github.com/zawy12/difficulty-algorithms/issues/3#issuecomment-442129791
-// Do not use Zcash's / Digishield's method of ignoring the ~6 most recent 
-// timestamps via the median past timestamp (MTP of 11).
-// Changing MTP to 1 instead of 11 enforces sequential timestamps. Not doing this was the
-// most serious, problematic, & fundamental consensus theory mistake made in bitcoin but
-// this change may require changes elsewhere such as creating block headers or what pools do.
-//  FTL for CAT is 45 * (10 * 60)/ 20 == 1350 
-//  FTL should be lowered to about N*T/20.
-//  FTL in BTC clones is MAX_FUTURE_BLOCK_TIME in chain.h.
-//  FTL in Ignition, Numus, and others can be found in main.h as DRIFT.
-//  FTL in Zcash & Dash clones need to change the 2*60*60 here:
-//  if (block.GetBlockTime() > nAdjustedTime + 2 * 60 * 60)
-//  which is around line 3700 in main.cpp in ZEC and validation.cpp in Dash
-//  If your coin uses median network time instead of node's time, the "revert to 
-//  node time" rule (70 minutes in BCH, ZEC, & BTC) should be reduced to FTL/2 
-//  to prevent 33% Sybil attack that can manipulate difficulty via timestamps. See:
-// https://github.com/zcash/zcash/issues/4021
-unsigned int GetNextWorkRequired_LWMA(const CBlockIndex* pindexLast, const CBlockHeader* pblock, const Consensus::Params& params)
-{
-    assert(pindexLast != nullptr);
-    const int64_t T = params.nPowTargetSpacing * 2;
 
-    // For T=600 use N=288 (takes 2 days to fully respond to hashrate changes) and has
-    //  a StdDev of N^(-0.5) which will often be the change in difficulty in N/4 blocks when hashrate is
-    // constant. 10% of blocks will have an error >2x the StdDev above or below where D should be.
-    //  This N=288 is like N=144 in ASERT which is N=144*ln(2)=100 in
-    // terms of BCH's ASERT.  BCH's ASERT uses N=288 which is like 2*288/ln(2) = 831 = N for
-    // LWMA. ASERT and LWMA are almost indistinguishable once this adjustment to N is used. In other words,
-    // 831/144 = 5.8 means my N=144 recommendation for T=600 is 5.8 times faster but SQRT(5.8) less
-    // stability than BCH's ASERT. The StdDev for 288 is 6%, so 12% accidental variation will be see in 10% of blocks.
-    // Twice 288 is 576 which will have 4.2% StdDev and be 2x slower. This is reasonable for T=300 or less.
-    // For T = 60, N=1,000 will have 3% StdDev & maybe plenty fast, but require 1M multiplications & additions per
-    // 1,000 blocks for validation which might be a consideration. I would not go over N=576 and prefer 360
-    // so that it can respond in 6 hours to hashrate changes.
-
-    const int64_t N = params.nLwmaAveragingWindow;
-
-    // Define a k that will be used to get a proper average after weighting the solvetimes.
-    const int64_t k = N * (N + 1) * T / 2;
-
-    const int64_t height = pindexLast->nHeight;
-    const arith_uint256 powLimit = UintToArith256(params.powLimit[static_cast<uint8_t>(PowAlgo::MEOWPOW)]);
-
-    // New coins just "give away" first N blocks. It's better to guess
-    // this value instead of using powLimit, but err on high side to not get stuck.
-    if (height < N) {
-        return powLimit.GetCompact();
-    }
-
-    arith_uint256 avgTarget, nextTarget;
-    int64_t thisTimestamp, previousTimestamp;
-    int64_t sumWeightedSolvetimes = 0, j = 0;
-
-    const CBlockIndex* blockPreviousTimestamp = pindexLast->GetAncestor(height - N);
-    previousTimestamp = blockPreviousTimestamp->GetBlockTime();
-
-    // Loop through N most recent blocks.
-    for (int64_t i = height - N + 1; i <= height; i++) {
-        const CBlockIndex* block = pindexLast->GetAncestor(i);
-
-        // Prevent solvetimes from being negative in a safe way. It must be done like this.
-        // Do not attempt anything like  if (solvetime < 1) {solvetime=1;}
-        // The +1 ensures new coins do not calculate nextTarget = 0.
-        thisTimestamp = (block->GetBlockTime() > previousTimestamp) ?
-                            block->GetBlockTime() :
-                            previousTimestamp + 1;
-
-        // 6*T limit prevents large drops in diff from long solvetimes which would cause oscillations.
-        int64_t solvetime = std::min(6 * T, thisTimestamp - previousTimestamp);
-
-        // The following is part of "preventing negative solvetimes".
-        previousTimestamp = thisTimestamp;
-
-        // Give linearly higher weight to more recent solvetimes.
-        j++;
-        sumWeightedSolvetimes += solvetime * j;
-
-        arith_uint256 target;
-        target.SetCompact(block->nBits);
-        avgTarget += target / N / k; // Dividing by k here prevents an overflow below.
-    }
-    nextTarget = avgTarget * sumWeightedSolvetimes;
-
-    if (nextTarget > powLimit) {
-        nextTarget = powLimit;
-    }
-
-    return nextTarget.GetCompact();
-}
-
-// LWMA-1 for BTC & Zcash clones
-// Copyright (c) 2017-2019 The Bitcoin Gold developers, Zawy, iamstenman (Microbitcoin)
-// MIT License
-// Algorithm by Zawy, a modification of WT-144 by Tom Harding
-// For updates see
-// https://github.com/zawy12/difficulty-algorithms/issues/3#issuecomment-442129791
-// Do not use Zcash's / Digishield's method of ignoring the ~6 most recent 
-// timestamps via the median past timestamp (MTP of 11).
-// Changing MTP to 1 instead of 11 enforces sequential timestamps. Not doing this was the
-// most serious, problematic, & fundamental consensus theory mistake made in bitcoin but
-// this change may require changes elsewhere such as creating block headers or what pools do.
-//  FTL for CAT is 45 * (10 * 60)/ 20 == 1350 
-//  FTL should be lowered to about N*T/20.
-//  FTL in BTC clones is MAX_FUTURE_BLOCK_TIME in chain.h.
-//  FTL in Ignition, Numus, and others can be found in main.h as DRIFT.
-//  FTL in Zcash & Dash clones need to change the 2*60*60 here:
-//  if (block.GetBlockTime() > nAdjustedTime + 2 * 60 * 60)
-//  which is around line 3700 in main.cpp in ZEC and validation.cpp in Dash
-//  If your coin uses median network time instead of node's time, the "revert to 
-//  node time" rule (70 minutes in BCH, ZEC, & BTC) should be reduced to FTL/2 
-//  to prevent 33% Sybil attack that can manipulate difficulty via timestamps. See:
-// https://github.com/zcash/zcash/issues/4021
-unsigned int GetNextWorkRequired_LWMA_MultiAlgo(const CBlockIndex* pindexLast, const CBlockHeader* pblock, const Consensus::Params& params)
-{
-    assert(pindexLast != nullptr);
-    const int64_t T = params.nPowTargetSpacing;
-
-    // For T=600 use N=288 (takes 2 days to fully respond to hashrate changes) and has
-    //  a StdDev of N^(-0.5) which will often be the change in difficulty in N/4 blocks when hashrate is
-    // constant. 10% of blocks will have an error >2x the StdDev above or below where D should be.
-    //  This N=288 is like N=144 in ASERT which is N=144*ln(2)=100 in
-    // terms of BCH's ASERT.  BCH's ASERT uses N=288 which is like 2*288/ln(2) = 831 = N for
-    // LWMA. ASERT and LWMA are almost indistinguishable once this adjustment to N is used. In other words,
-    // 831/144 = 5.8 means my N=144 recommendation for T=600 is 5.8 times faster but SQRT(5.8) less
-    // stability than BCH's ASERT. The StdDev for 288 is 6%, so 12% accidental variation will be see in 10% of blocks.
-    // Twice 288 is 576 which will have 4.2% StdDev and be 2x slower. This is reasonable for T=300 or less.
-    // For T = 60, N=1,000 will have 3% StdDev & maybe plenty fast, but require 1M multiplications & additions per
-    // 1,000 blocks for validation which might be a consideration. I would not go over N=576 and prefer 360
-    // so that it can respond in 6 hours to hashrate changes.
-
-    const int64_t N = params.nLwmaAveragingWindow;
-
-    // Define a k that will be used to get a proper average after weighting the solvetimes.
-    const int64_t k = N * (N + 1) * T / 2;
-    const int64_t height = pindexLast->nHeight;
-    const PowAlgo algo = pindexLast->nVersion.GetAlgo();
-    const arith_uint256 powLimit = UintToArith256(params.powLimit[static_cast<uint8_t>(algo)]);
-
-    arith_uint256 avgTarget, nextTarget;
-    int64_t thisTimestamp, previousTimestamp;
-    int64_t sumWeightedSolvetimes = 0, j = 0;
-
-    std::vector<const CBlockIndex*> SameAlgoBlocks;
-    for (int c = height-1; SameAlgoBlocks.size() < (N + 1); c--){
-		const CBlockIndex* block = pindexLast->GetAncestor(c); // -1 after execution
-		if (block->GetBlockHeader(params).nVersion.GetAlgo() == algo){
-			SameAlgoBlocks.push_back(block);
-		}
-
-		if (c < N){
-            // If there are not enough blocks with this algo, fallback to stock LWMA
-            return GetNextWorkRequired_LWMA(pindexLast, pblock, params);
-		}
-	}
-
-    // Loop through N most recent blocks.
-    for (int64_t i = N; i > 0; i--) {
-        const CBlockIndex* block = SameAlgoBlocks[i-1];
-        const CBlockIndex* blockPreviousTimestamp = SameAlgoBlocks[i-1];
-        previousTimestamp = blockPreviousTimestamp->GetBlockTime();
-
-        // Prevent solvetimes from being negative in a safe way. It must be done like this.
-        // Do not attempt anything like  if (solvetime < 1) {solvetime=1;}
-        // The +1 ensures new coins do not calculate nextTarget = 0.
-        thisTimestamp = (block->GetBlockTime() > previousTimestamp) ?
-                            block->GetBlockTime() :
-                            previousTimestamp + 1;
-
-        // 6*T limit prevents large drops in diff from long solvetimes which would cause oscillations.
-        int64_t solvetime = std::min(6 * T, thisTimestamp - previousTimestamp);
-
-        // The following is part of "preventing negative solvetimes".
-        previousTimestamp = thisTimestamp;
-
-        // Give linearly higher weight to more recent solvetimes.
-        j++;
-        sumWeightedSolvetimes += solvetime * j;
-
-        arith_uint256 target;
-        target.SetCompact(block->nBits);
-        avgTarget += target / N / k; // Dividing by k here prevents an overflow below.
-    }
-    nextTarget = avgTarget * sumWeightedSolvetimes;
-
-    if (nextTarget > powLimit) {
-        nextTarget = powLimit;
-    }
-
-    return nextTarget.GetCompact();
-}
-
-unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
+unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params, bool fIsAuxPow)
 {
     if (params.IsAuxpowActive(pindexLast->nHeight + 1)) {
-        return GetNextWorkRequired_LWMA(pindexLast, pblock, params);
+        // FIX: Use the block's version to determine if it's AuxPoW, not the parameter
+        bool fIsAuxPowBlock = pblock->nVersion.IsAuxpow();
+        return GetNextWorkRequired_LWMA_MultiAlgo(pindexLast, pblock, params, fIsAuxPowBlock);
     }
 
     if (IsDGWActive(pindexLast->nHeight + 1)) {

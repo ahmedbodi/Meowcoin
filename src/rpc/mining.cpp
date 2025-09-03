@@ -564,7 +564,8 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
             script = CScript() << OP_TRUE;
         }
 
-        pblocktemplate = BlockAssembler(GetParams()).CreateNewBlock(script, fSupportsSegwit);
+        // getblocktemplate should always create MEOWPOW blocks (not AuxPoW)
+        pblocktemplate = BlockAssembler(GetParams()).CreateNewBlock(script, fSupportsSegwit, false);
         if (!pblocktemplate)
             throw JSONRPCError(RPC_OUT_OF_MEMORY, "Out of memory");
 
@@ -1410,11 +1411,11 @@ void AuxMiningCheck()
     if (g_connman->GetNodeCount(CConnman::CONNECTIONS_ALL) == 0
         && !GetParams().MineBlocksOnDemand())
     throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED,
-                        "Namecoin is not connected!");
+                        "Meowcoin is not connected!");
 
     if (IsInitialBlockDownload() && !GetParams().MineBlocksOnDemand())
     throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD,
-                        "Namecoin is downloading blocks...");
+                        "Meowcoin is downloading blocks...");
 
     /* This should never fail, since the chain is already
         past the point of merge-mining start.  Check nevertheless.  */
@@ -1456,7 +1457,7 @@ UniValue AuxMiningCreateBlock(const CScript& scriptPubKey)
 
         // Create new block with nonce = 0 and extraNonce = 1
         std::unique_ptr<CBlockTemplate> newBlock
-            = BlockAssembler(GetParams()).CreateNewBlock(scriptPubKey);
+            = BlockAssembler(GetParams()).CreateNewBlock(scriptPubKey, true, true);
         if (!newBlock)
             throw JSONRPCError(RPC_OUT_OF_MEMORY, "out of memory");
 
@@ -1468,6 +1469,12 @@ UniValue AuxMiningCreateBlock(const CScript& scriptPubKey)
         // Finalise it by setting the version and building the merkle root
         IncrementExtraNonce(&newBlock->block, pindexPrev, nExtraNonce);
         newBlock->block.nVersion.SetAuxpow(true);
+
+        // For AuxPoW blocks, we need to use SCRYPT difficulty instead of MEOWPOW
+        // The block was created with MEOWPOW difficulty, so we need to recalculate with SCRYPT
+        LogPrintf("DEBUG: AuxMiningCreateBlock - Before recalc: nBits=%08x\n", newBlock->block.nBits);
+        newBlock->block.nBits = GetNextWorkRequired(pindexPrev, &newBlock->block, GetParams().GetConsensus(), true);
+        LogPrintf("DEBUG: AuxMiningCreateBlock - After recalc: nBits=%08x\n", newBlock->block.nBits);
 
         // Save
         pblock = &newBlock->block;
